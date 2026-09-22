@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Echoes of Mohenjo-daro</title>
+<style>
+    body {
+        margin: 0;
+        overflow: hidden;
+        background: #000;
+        font-family: 'Courier New', Courier, monospace;
+        user-select: none;
+    }
+    canvas {
+        display: block;
+    }
+    #ui {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+    }
+    #journal {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        width: 320px;
+        background: rgba(15, 15, 15, 0.9);
+        color: #fff;
+        padding: 20px;
+        border: 1px solid #444;
+        border-radius: 5px;
+        box-shadow: 2px 2px 15px rgba(0,0,0,0.8);
+    }
+    #journal h3 {
+        margin: 0 0 15px 0;
+        color: #f39c12;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        border-bottom: 1px solid #333;
+        padding-bottom: 5px;
+    }
+    #journal ul {
+        padding-left: 15px;
+        margin: 0;
+        list-style-type: square;
+    }
+    #journal li {
+        margin-bottom: 10px;
+        line-height: 1.4;
+    }
+    #prompt {
+        position: absolute;
+        left: 50%;
+        top: 65%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.85);
+        color: #fff;
+        padding: 12px 24px;
+        border-radius: 25px;
+        font-size: 18px;
+        font-weight: bold;
+        border: 1px solid #fff;
+        box-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
+        display: none;
+        animation: pulse 2s infinite;
+    }
+    .hud {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        color: #fff;
+        font-size: 24px;
+        font-weight: bold;
+        letter-spacing: 1px;
+        text-shadow: 2px 2px 4px #000;
+    }
+    @keyframes pulse {
+        0% { transform: translateX(-50%) scale(1); }
+        50% { transform: translateX(-50%) scale(1.05); }
+        100% { transform: translateX(-50%) scale(1); }
+    }
+</style>
+</head>
+<body>
+
+<canvas id="game"></canvas>
+<div id="ui">
+    <div class="hud">Echoes of Mohenjo-daro</div>
+    <div id="journal">
+        <h3>Field Journal</h3>
+        <ul id="journalList">
+            <li style="color: #fff">Arrived at Trench 4.</li>
+            <li style="color: #fff">Site appears undisturbed.</li>
+        </ul>
+    </div>
+    <div id="prompt">Press [E] to Interact</div>
+</div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    if (leftPan) leftPan.x = canvas.width / 2 - 200;
+    if (rightPan) rightPan.x = canvas.width / 2 + 200;
+    initWeights(); // reset puzzle weights to screen center logic if resized
+}
+window.addEventListener('resize', resize);
+
+// Input Handling
+let keys = {};
+let prevKeys = {};
+window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+let mouse = { x: 0, y: 0, isDown: false, dx: 0, dy: 0 };
+window.addEventListener('mousemove', e => {
+    mouse.dx = e.clientX - mouse.x;
+    mouse.dy = e.clientY - mouse.y;
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+
+    if (sceneMode === 'PUZZLE' && draggedWeight) {
+        draggedWeight.x = e.clientX - draggedWeight.offX;
+        draggedWeight.y = e.clientY - draggedWeight.offY;
+    }
+});
+window.addEventListener('mousedown', e => {
+    mouse.isDown = true;
+    if (sceneMode === 'PUZZLE') {
+        for (let i = weights.length - 1; i >= 0; i--) { // Reverse for visual z-index
+            let w = weights[i];
+            let wx = w.onPan ? canvas.width/2 - 200 - w.w/2 + (w.id * 15 - 45) : w.x;
+            let wy = w.onPan ? leftPan.y - w.h/2 - 10 : w.y;
+            
+            if (e.clientX >= wx && e.clientX <= wx + w.w && e.clientY >= wy && e.clientY <= wy + w.h) {
+                w.dragging = true;
+                w.onPan = false;
+                w.x = wx; w.y = wy; // detach from pan visually
+                draggedWeight = w;
+                w.offX = e.clientX - w.x;
+                w.offY = e.clientY - w.y;
+                break;
+            }
+        }
+    }
+});
+window.addEventListener('mouseup', e => {
+    mouse.isDown = false;
+    if (sceneMode === 'PUZZLE' && draggedWeight) {
+        draggedWeight.dragging = false;
+        let cx = canvas.width / 2;
+        let pX = cx - 200;
+        let pY = leftPan.y;
+        
+        let dist = Math.hypot((draggedWeight.x + draggedWeight.w/2) - pX, (draggedWeight.y + draggedWeight.h/2) - pY);
+        if (dist < 150) {
+            draggedWeight.onPan = true;
+        }
+        draggedWeight = null;
+    }
+});
+
+// Game State
+let gameState = 'SCENE_1'; // SCENE_1, SCENE_2
+let sceneMode = 'EXPLORE'; // EXPLORE, BRUSHING, PUZZLE
+let warpActive = false;
+let warpTimer = 0;
+let brushProgress = 0;
+let lastMousePos = {x: 0, y: 0};
+
+// Camera
+let camX = 0;
+let camY = 0;
+
+// Entities
+let player = { type: 'PLAYER', x: 250, y: 450, w: 30, h: 30, depth: 50, color: '#3498db', vx: 0, vy: 0, accel: 1800, friction: 0.82, maxSpeed: 250 };
+let mound = { type: 'MOUND', x: 450, y: 450, w: 70, h: 70, brushed: false, collected: false };
+let walls = [];
+let entities = [];
+
+// Puzzle State
+let puzzleSolved = false;
+let balanceTimer = 0;
+let weights = [];
+let draggedWeight = null;
+let leftPan = { x: 0, y: 0, r: 80 };
+let rightPan = { x: 0, y: 0, r: 80, weight: 11 };
+
+function initWeights() {
+    let cx = window.innerWidth / 2;
+    let cy = window.innerHeight;
+    weights = [
+        {id: 1, val: 1, x: cx - 180, y: cy - 120, w: 30, h: 30, dragging: false, onPan: false},
+        {id: 2, val: 2, x: cx - 120, y: cy - 120, w: 40, h: 40, dragging: false, onPan: false},
+        {id: 3, val: 4, x: cx - 50, y: cy - 120, w: 50, h: 50, dragging: false, onPan: false},
+        {id: 4, val: 8, x: cx + 30, y: cy - 120, w: 60, h: 60, dragging: false, onPan: false},
+        {id: 5, val: 16, x: cx + 120, y: cy - 120, w: 70, h: 70, dragging: false, onPan: false}
+    ];
+}
+
+function initScene1() {
+    walls = [
+        // Outer trench boundaries
+        { type: 'WALL', x: 0, y: 0, w: 1000, h: 50, depth: 80, color: '#8B5A2B' },
+        { type: 'WALL', x: 0, y: 0, w: 50, h: 800, depth: 80, color: '#8B5A2B' },
+        { type: 'WALL', x: 0, y: 800, w: 1050, h: 50, depth: 80, color: '#8B5A2B' },
+        { type: 'WALL', x: 1000, y: 0, w: 50, h: 800, depth: 80, color: '#8B5A2B' },
+        // Trench dirt partitions
+        { type: 'WALL', x: 200, y: 200, w: 400, h: 80, depth: 50, color: '#9c6631' },
+        { type: 'WALL', x: 200, y: 200, w: 80, h: 300, depth: 50, color: '#9c6631' },
+        { type: 'WALL', x: 700, y: 400, w: 80, h: 300, depth: 50, color: '#9c6631' }
+    ];
+    entities = [...walls, mound, player];
+}
+
+function initScene2() {
+    walls = [
+        // Restored towering walls
+        { type: 'WALL', x: 0, y: 0, w: 1000, h: 50, depth: 250, color: '#C86C51' },
+        { type: 'WALL', x: 0, y: 0, w: 50, h: 800, depth: 250, color: '#C86C51' },
+        { type: 'WALL', x: 0, y: 800, w: 1050, h: 50, depth: 250, color: '#C86C51' },
+        { type: 'WALL', x: 1000, y: 0, w: 50, h: 800, depth: 250, color: '#C86C51' },
+        // Rooms
+        { type: 'WALL', x: 300, y: 50, w: 80, h: 400, depth: 200, color: '#b55a40' },
+        { type: 'WALL', x: 300, y: 450, w: 300, h: 80, depth: 200, color: '#b55a40' },
+        { type: 'WALL', x: 700, y: 450, w: 300, h: 80, depth: 200, color: '#b55a40' },
+        // Amphorae decor
+        { type: 'WALL', x: 650, y: 300, w: 40, h: 40, depth: 60, color: '#D2691E' },
+        { type: 'WALL', x: 610, y: 340, w: 40, h: 40, depth: 60, color: '#D2691E' }
+    ];
+    let workbench = { type: 'WORKBENCH', x: 450, y: 300, w: 140, h: 70, depth: 60, color: '#5C4033' };
+    
+    // Player remains at same coordinate organically, but let's clamp just in case
+    if(player.x > 900) player.x = 900;
+    
+    entities = [...walls, workbench, player];
+    gameState = 'SCENE_2';
+}
+
+function addToJournal(text) {
+    const ul = document.getElementById('journalList');
+    const li = document.createElement('li');
+    li.innerText = text;
+    li.style.color = '#f1c40f';
+    li.style.opacity = '0';
+    li.style.transition = 'opacity 0.5s ease-in, color 2s ease-out';
+    ul.appendChild(li);
+    
+    // Force reflow for animation
+    void li.offsetWidth;
+    li.style.opacity = '1';
+    
+    setTimeout(() => li.style.color = '#fff', 2000);
+}
+
+function shadeColor(color, percent) {
+    let R = parseInt(color.substring(1,3),16);
+    let G = parseInt(color.substring(3,5),16);
+    let B = parseInt(color.substring(5,7),16);
+    R = parseInt(R * (100 + percent) / 100);
+    G = parseInt(G * (100 + percent) / 100);
+    B = parseInt(B * (100 + percent) / 100);
+    R = (R<255)?R:255; G = (G<255)?G:255; B = (B<255)?B:255;
+    R = (R>0)?R:0; G = (G>0)?G:0; B = (B>0)?B:0;
+    let RR = ((R.toString(16).length==1)?"0"+R.toString(16):R.toString(16));
+    let GG = ((G.toString(16).length==1)?"0"+G.toString(16):G.toString(16));
+    let BB = ((B.toString(16).length==1)?"0"+B.toString(16):B.toString(16));
+    return "#"+RR+GG+BB;
+}
+
+// Pseudo-3D Extrusion Engine
+function drawExtruded(ctx, x, y, w, h, depth, color) {
+    const ox = depth * 0.3;
+    const oy = -depth;
+
+    // Left Face (Visible because camera shifts Up and Right)
+    ctx.fillStyle = shadeColor(color, -40);
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + ox, y + oy);
+    ctx.lineTo(x + ox, y + h + oy);
+    ctx.lineTo(x, y + h);
+    ctx.fill();
+    
+    // Front Face
+    ctx.fillStyle = shadeColor(color, -20);
+    ctx.beginPath();
+    ctx.moveTo(x, y + h);
+    ctx.lineTo(x + ox, y + h + oy);
+    ctx.lineTo(x + w + ox, y + h + oy);
+    ctx.lineTo(x + w, y + h);
+    ctx.fill();
+
+    // Top Face
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(x + ox, y + oy);
+    ctx.lineTo(x + w + ox, y + oy);
+    ctx.lineTo(x + w + ox, y + h + oy);
+    ctx.lineTo(x + ox, y + h + oy);
+    ctx.fill();
+    
+    // Optional Outline for crispness
+    ctx.strokeStyle = shadeColor(color, -60);
+    ctx.lineWidth = 1;
+    ctx.stroke();
+}
+
+function checkCollision(a, b) {
+    return a.x < b.x + b.w &&
+           a.x + a.w > b.x &&
+           a.y < b.y + b.h &&
+           a.y + a.h > b.y;
+}
+
+function update(dt) {
+    let promptUI = document.getElementById('prompt');
+
+    if (sceneMode === 'EXPLORE') {
+        // Crisp Velocity based WASD Physics
+        if (keys['w']) player.vy -= player.accel * dt;
+        if (keys['s']) player.vy += player.accel * dt;
+        if (keys['a']) player.vx -= player.accel * dt;
+        if (keys['d']) player.vx += player.accel * dt;
+
+        player.vx *= Math.pow(player.friction, dt * 60);
+        player.vy *= Math.pow(player.friction, dt * 60);
+
+        let speed = Math.hypot(player.vx, player.vy);
+        if (speed > player.maxSpeed) {
+            player.vx = (player.vx / speed) * player.maxSpeed;
+            player.vy = (player.vy / speed) * player.maxSpeed;
+        }
+        
+        if (Math.abs(player.vx) < 1) player.vx = 0;
+        if (Math.abs(player.vy) < 1) player.vy = 0;
+
+        // Slide along walls (X Axis AABB)
+        player.x += player.vx * dt;
+        for (let e of entities) {
+            if ((e.type === 'WALL' || e.type === 'WORKBENCH') && checkCollision(player, e)) {
+                if (player.vx > 0) player.x = e.x - player.w;
+                else if (player.vx < 0) player.x = e.x + e.w;
+                player.vx = 0;
+            }
+        }
+        
+        // Slide along walls (Y Axis AABB)
+        player.y += player.vy * dt;
+        for (let e of entities) {
+            if ((e.type === 'WALL' || e.type === 'WORKBENCH') && checkCollision(player, e)) {
+                if (player.vy > 0) player.y = e.y - player.h;
+                else if (player.vy < 0) player.y = e.y + e.h;
+                player.vy = 0;
+            }
+        }
+
+        // Interaction Proximity Check
+        let interactable = null;
+        let minDist = 120;
+        let cx1 = player.x + player.w/2;
+        let cy1 = player.y + player.h/2;
+
+        for (let e of entities) {
+            if (e.type === 'MOUND' || e.type === 'WORKBENCH') {
+                let cx2 = e.x + e.w/2;
+                let cy2 = e.y + e.h/2;
+                let dist = Math.hypot(cx1 - cx2, cy1 - cy2);
+                if (dist < minDist) {
+                    minDist = dist;
+                    interactable = e;
+                }
+            }
+        }
+
+        if (interactable) {
+            promptUI.style.display = 'block';
+            if (interactable.type === 'MOUND') {
+                if (!interactable.brushed) {
+                    promptUI.innerText = "Press [E] to Brush Dirt";
+                    if (keys['e'] && !prevKeys['e']) {
+                        sceneMode = 'BRUSHING';
+                        lastMousePos = {x: mouse.x, y: mouse.y};
+                        promptUI.innerText = "Click and Drag Rapidly to Brush!";
+                    }
+                } else if (!interactable.collected) {
+                    promptUI.innerText = "Press [E] to Collect Seal";
+                    if (keys['e'] && !prevKeys['e']) {
+                        interactable.collected = true;
+                        addToJournal("Found a Steatite Seal.");
+                        addToJournal("Features a unicorn motif.");
+                        warpActive = true;
+                        warpTimer = 0;
+                        entities = entities.filter(e => e !== interactable);
+                        promptUI.style.display = 'none';
+                    }
+                }
+            } else if (interactable.type === 'WORKBENCH' && !puzzleSolved) {
+                promptUI.innerText = "Press [E] to Inspect Scale";
+                if (keys['e'] && !prevKeys['e']) {
+                    sceneMode = 'PUZZLE';
+                    promptUI.style.display = 'none';
+                }
+            }
+        } else {
+            promptUI.style.display = 'none';
+        }
+
+    } else if (sceneMode === 'BRUSHING') {
+        if (mouse.isDown) {
+            let dist = Math.hypot(mouse.x - lastMousePos.x, mouse.y - lastMousePos.y);
+            brushProgress += dist;
+        }
+        lastMousePos = {x: mouse.x, y: mouse.y};
+
+        if (brushProgress > 4000) {
+            let m = entities.find(e => e.type === 'MOUND');
+            if (m) m.brushed = true;
+            sceneMode = 'EXPLORE';
+            promptUI.innerText = "Press [E] to Collect Seal";
+            brushProgress = 0;
+        }
+    } else if (sceneMode === 'PUZZLE') {
+        let leftSum = weights.filter(w => w.onPan).reduce((a, b) => a + b.val, 0);
+        let tilt = rightPan.weight - leftSum; 
+        
+        let basePanY = canvas.height / 2 + 50;
+        let targetLeftY = basePanY - tilt * 12;
+        let targetRightY = basePanY + tilt * 12;
+        
+        // Physics smoothing for scale
+        leftPan.y += (targetLeftY - leftPan.y) * 8 * dt;
+        rightPan.y += (targetRightY - rightPan.y) * 8 * dt;
+
+        if (tilt === 0) {
+            balanceTimer += dt;
+            if (balanceTimer > 2 && !puzzleSolved) {
+                sceneMode = 'EXPLORE';
+                addToJournal("Weight matched exactly.");
+                addToJournal("Evidence of a strictly regulated economy.");
+                promptUI.style.display = 'none';
+                puzzleSolved = true;
+            }
+        } else {
+            balanceTimer = 0;
+        }
+    }
+
+    // Warp temporal logic
+    if (warpActive) {
+        warpTimer += dt;
+        if (warpTimer > 1.5 && gameState === 'SCENE_1') {
+            initScene2();
+        }
+        if (warpTimer > 3) {
+            warpActive = false;
+        }
+    }
+
+    // Camera follow logic
+    let targetCamX = player.x + player.w/2 - canvas.width/2;
+    let targetCamY = player.y + player.h/2 - canvas.height/2;
+    camX += (targetCamX - camX) * 5 * dt;
+    camY += (targetCamY - camY) * 5 * dt;
+
+    // Track input edges
+    for (let k in keys) prevKeys[k] = keys[k];
+}
+
+function drawSceneBackground(ctx) {
+    if (gameState === 'SCENE_1') {
+        // Trench Floor
+        ctx.fillStyle = '#4a3219';
+        ctx.fillRect(-100, -100, 1500, 1500);
+        
+        // Grid String Lines
+        ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([10, 10]);
+        for(let i=0; i<=1000; i+=100) {
+            ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 1000); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(1000, i); ctx.stroke();
+        }
+        ctx.setLineDash([]);
+    } else {
+        // 2500 BCE Paved Mud-Brick Floor
+        ctx.fillStyle = '#6b4c3a';
+        ctx.fillRect(-100, -100, 1500, 1500);
+        
+        ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+        ctx.lineWidth = 1;
+        for(let i=0; i<=1000; i+=40) {
+            ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 1000); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(1000, i); ctx.stroke();
+        }
+    }
+}
+
+function renderEntities(ctx) {
+    // Y-Sorting (Painter's Algorithm)
+    entities.sort((a, b) => (a.y + a.h) - (b.y + b.h));
+    
+    for (let e of entities) {
+        if (e.type === 'PLAYER' || e.type === 'WALL' || e.type === 'WORKBENCH') {
+            drawExtruded(ctx, e.x, e.y, e.w, e.h, e.depth, e.color);
+        } else if (e.type === 'MOUND') {
+            let ch = e.brushed ? 5 : 25 - (brushProgress / 4000) * 20;
+            if (ch < 5) ch = 5;
+            let col = e.brushed ? '#a39b8b' : '#6b4c3a';
+            let ox = ch * 0.3;
+            let oy = -ch;
+            
+            // Base Mound
+            ctx.fillStyle = shadeColor(col, -20);
+            ctx.beginPath();
+            ctx.ellipse(e.x + e.w/2, e.y + e.h/2, e.w/2, e.w*0.35, 0, 0, Math.PI*2);
+            ctx.fill();
+            
+            // Extruded Top
+            ctx.fillStyle = col;
+            ctx.beginPath();
+            ctx.ellipse(e.x + e.w/2 + ox, e.y + e.h/2 + oy, e.w/2, e.w*0.35, 0, 0, Math.PI*2);
+            ctx.fill();
+
+            // Render Steatite Seal if brushed
+            if (e.brushed && !e.collected) {
+                ctx.fillStyle = '#e6c200'; 
+                let sx = e.x + e.w/2 + ox; 
+                let sy = e.y + e.h/2 + oy - 5;
+                
+                // Draw 2.5D Seal
+                drawExtruded(ctx, sx - 10, sy - 10, 20, 15, 4, '#e6c200');
+                
+                ctx.fillStyle = '#443';
+                ctx.fillRect(sx - 4 + 4*0.3, sy - 4 - 4, 8, 4); // Fake engraving on top face
+            }
+        }
+    }
+}
+
+function drawLighting(ctx) {
+    let px = player.x + player.w/2 - camX;
+    let py = player.y + player.h/2 - camY;
+    
+    let rad = ctx.createRadialGradient(px, py, 60, px, py, 550);
+    rad.addColorStop(0, 'rgba(0,0,0,0)');
+    if (gameState === 'SCENE_1') {
+        rad.addColorStop(1, 'rgba(0,0,0,0.85)');
+    } else {
+        rad.addColorStop(1, 'rgba(15, 8, 0, 0.7)'); // Warmer tone for the past
+    }
+    
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.fillStyle = rad;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.globalCompositeOperation = 'source-over';
+}
+
+function drawPuzzleOverlay(ctx) {
+    // Darken Background
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 28px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText("Match the target weight to unlock the past.", canvas.width/2, 80);
+
+    let cx = canvas.width / 2;
+    let basePanY = canvas.height / 2 + 50;
+
+    // Center Stand
+    drawExtruded(ctx, cx - 15, basePanY - 200, 30, 250, 20, '#A0522D');
+    
+    // Beam
+    ctx.strokeStyle = '#8B5A2B';
+    ctx.lineWidth = 14;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(cx - 200, leftPan.y - 120);
+    ctx.lineTo(cx + 200, rightPan.y - 120);
+    ctx.stroke();
+
+    // Pivot Pin
+    ctx.fillStyle = '#444';
+    ctx.beginPath(); ctx.arc(cx, basePanY - 120, 10, 0, Math.PI*2); ctx.fill();
+
+    // Strings
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#deb887';
+    // Left
+    ctx.beginPath(); ctx.moveTo(cx - 200, leftPan.y - 120); ctx.lineTo(cx - 250, leftPan.y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx - 200, leftPan.y - 120); ctx.lineTo(cx - 150, leftPan.y); ctx.stroke();
+    // Right
+    ctx.beginPath(); ctx.moveTo(cx + 200, rightPan.y - 120); ctx.lineTo(cx + 150, rightPan.y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx + 200, rightPan.y - 120); ctx.lineTo(cx + 250, rightPan.y); ctx.stroke();
+
+    // Pans
+    ctx.fillStyle = '#6e3c22';
+    ctx.beginPath(); ctx.ellipse(cx - 200, leftPan.y, 80, 25, 0, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cx + 200, rightPan.y, 80, 25, 0, 0, Math.PI*2); ctx.fill();
+
+    // Target Weight (Carnelian Stone)
+    drawExtruded(ctx, cx + 180, rightPan.y - 45, 40, 40, 15, '#cc3333');
+    ctx.fillStyle = '#fff';
+    ctx.font = '16px monospace';
+    ctx.fillText("Carnelian (11)", cx + 200, rightPan.y + 40);
+
+    // Draggable Weights
+    for (let w of weights) {
+        let wx = w.x;
+        let wy = w.y;
+        if (w.onPan && !w.dragging) {
+            wx = cx - 200 - w.w/2 + (w.id * 18 - 54); 
+            wy = leftPan.y - w.h - 10;
+        }
+
+        drawExtruded(ctx, wx, wy, w.w, w.h, w.h*0.4, '#A9A9A9');
+        
+        ctx.fillStyle = '#000';
+        ctx.font = 'bold 20px monospace';
+        // Adjust text position slightly for top face offset
+        ctx.fillText(w.val, wx + w.w/2 + w.h*0.4*0.3, wy + w.h/2 - w.h*0.4 + 6);
+
+        if (w.dragging) {
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(wx - 2, wy - 2, w.w + 4, w.h + 4);
+        }
+    }
+}
+
+function draw(dt) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    ctx.save();
+    ctx.translate(-camX, -camY);
+
+    drawSceneBackground(ctx);
+    renderEntities(ctx);
+
+    // Warp Effects rendering in world space
+    if (warpActive) {
+        // Golden Ripple
+        ctx.strokeStyle = `rgba(218, 165, 32, ${Math.max(0, 1 - warpTimer/2)})`;
+        ctx.lineWidth = 15;
+        for(let i=0; i<6; i++) {
+            ctx.beginPath();
+            ctx.arc(player.x + player.w/2, player.y + player.h/2, warpTimer * 1000 + i*120, 0, Math.PI*2);
+            ctx.stroke();
+        }
+
+        // Screen whiteout fade transition
+        let fade = 0;
+        if (warpTimer < 1.5) fade = warpTimer / 1.5;
+        else fade = 1 - (warpTimer - 1.5) / 1.5;
+        
+        ctx.fillStyle = `rgba(255, 255, 255, ${fade})`;
+        ctx.fillRect(camX - 100, camY - 100, canvas.width + 200, canvas.height + 200);
+    }
+
+    ctx.restore();
+
+    drawLighting(ctx);
+
+    // Render puzzle overlay in screen space
+    if (sceneMode === 'PUZZLE') {
+        drawPuzzleOverlay(ctx);
+    }
+    
+    // Brushing Progress Bar Overlay
+    if (sceneMode === 'BRUSHING') {
+        ctx.fillStyle = 'rgba(0,0,0,0.8)';
+        ctx.fillRect(canvas.width/2 - 150, canvas.height - 100, 300, 24);
+        
+        ctx.fillStyle = '#f39c12';
+        ctx.fillRect(canvas.width/2 - 148, canvas.height - 98, (brushProgress/4000)*296, 20);
+        
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(canvas.width/2 - 150, canvas.height - 100, 300, 24);
+    }
+}
+
+let lastTime = performance.now();
+function loop(time) {
+    let dt = (time - lastTime) / 1000;
+    if (dt > 0.1) dt = 0.1; // clamp delta time to prevent physics tunneling
+    lastTime = time;
+
+    update(dt);
+    draw(dt);
+
+    requestAnimationFrame(loop);
+}
+
+// Boot Game
+resize();
+initScene1();
+requestAnimationFrame(loop);
+
+</script>
+</body>
+</html>
