@@ -2,708 +2,694 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Echoes of Mohenjo-daro</title>
 <style>
-    body {
-        margin: 0;
-        overflow: hidden;
-        background: #000;
+    /* --- CORE STYLES --- */
+    body { margin: 0; overflow: hidden; background: #000; user-select: none; touch-action: none; }
+    canvas { display: block; image-rendering: pixelated; }
+    #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+    .hidden { display: none !important; }
+
+    /* --- THEMES --- */
+    .theme-modern {
+        font-family: 'Segoe UI', Roboto, Helvetica, sans-serif;
+        --bg: rgba(20, 30, 40, 0.85);
+        --border: 2px solid #4a90e2;
+        --text: #e0e0e0;
+        --accent: #4a90e2;
+        --radius: 12px;
+        --shadow: 0 4px 15px rgba(0,0,0,0.6), 0 0 10px rgba(74, 144, 226, 0.4);
+    }
+    
+    .theme-ancient {
         font-family: 'Courier New', Courier, monospace;
-        user-select: none;
+        --bg: #2c1e16;
+        --border: 6px solid #4a3219;
+        --text: #f5deb3;
+        --accent: #b8860b;
+        --radius: 0px;
+        --shadow: 0 0 0 2px #b8860b, inset 0 0 20px rgba(0,0,0,0.9), 8px 8px 0px rgba(0,0,0,0.8);
     }
-    canvas {
-        display: block;
+
+    /* --- UI PANELS --- */
+    .panel {
+        position: absolute; background: var(--bg); border: var(--border); color: var(--text);
+        border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; pointer-events: auto;
     }
-    #ui {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        pointer-events: none;
+
+    #journal-btn {
+        top: 20px; right: 20px; padding: 10px 20px; font-weight: bold; cursor: pointer; font-size: 18px;
+        transition: transform 0.1s; display: flex; align-items: center; gap: 8px; z-index: 100;
     }
-    #journal {
-        position: absolute;
-        top: 20px;
-        right: 20px;
-        width: 320px;
-        background: rgba(15, 15, 15, 0.9);
-        color: #fff;
-        padding: 20px;
-        border: 1px solid #444;
-        border-radius: 5px;
-        box-shadow: 2px 2px 15px rgba(0,0,0,0.8);
+    #journal-btn:active { transform: scale(0.95); }
+
+    #hud-prompt {
+        bottom: 30px; right: 30px; font-weight: bold; font-size: 18px; text-transform: uppercase;
+        animation: pulse 1.5s infinite; letter-spacing: 1px;
     }
-    #journal h3 {
-        margin: 0 0 15px 0;
-        color: #f39c12;
-        text-transform: uppercase;
-        letter-spacing: 2px;
-        border-bottom: 1px solid #333;
-        padding-bottom: 5px;
+
+    #dialog-box {
+        bottom: 40px; left: 50%; transform: translateX(-50%); width: 700px; max-width: 90%;
+        display: flex; gap: 20px; align-items: center;
     }
-    #journal ul {
-        padding-left: 15px;
-        margin: 0;
-        list-style-type: square;
+    .portrait-canvas {
+        width: 64px; height: 64px; border: 2px solid var(--accent); background: #000;
+        image-rendering: pixelated; flex-shrink: 0; box-shadow: inset 0 0 15px rgba(0,0,0,1);
     }
-    #journal li {
-        margin-bottom: 10px;
-        line-height: 1.4;
+    .dialog-content { flex-grow: 1; line-height: 1.6; font-size: 18px; }
+    .dialog-speaker { color: var(--accent); font-weight: bold; margin-bottom: 8px; display: block; font-size: 22px; letter-spacing: 1px;}
+
+    #inventory-panel, #journal-panel { top: 50%; left: 50%; transform: translate(-50%, -50%); width: 340px; z-index: 50;}
+    h3 { margin: 0 0 15px 0; color: var(--accent); border-bottom: 2px solid var(--accent); padding-bottom: 5px; text-transform: uppercase; font-size: 22px;}
+    .inv-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    .inv-slot {
+        width: 100%; aspect-ratio: 1; background: rgba(0,0,0,0.7); border: 1px solid var(--accent);
+        display: flex; justify-content: center; align-items: center; position: relative; box-shadow: inset 0 0 10px rgba(0,0,0,0.8);
     }
-    #prompt {
-        position: absolute;
-        left: 50%;
-        top: 65%;
-        transform: translateX(-50%);
-        background: rgba(0, 0, 0, 0.85);
-        color: #fff;
-        padding: 12px 24px;
-        border-radius: 25px;
-        font-size: 18px;
-        font-weight: bold;
-        border: 1px solid #fff;
-        box-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
-        display: none;
-        animation: pulse 2s infinite;
-    }
-    .hud {
-        position: absolute;
-        top: 20px;
-        left: 20px;
-        color: #fff;
-        font-size: 24px;
-        font-weight: bold;
-        letter-spacing: 1px;
-        text-shadow: 2px 2px 4px #000;
-    }
-    @keyframes pulse {
-        0% { transform: translateX(-50%) scale(1); }
-        50% { transform: translateX(-50%) scale(1.05); }
-        100% { transform: translateX(-50%) scale(1); }
-    }
+    .inv-slot canvas { max-width: 80%; max-height: 80%; }
+    .item-count { position: absolute; bottom: 2px; right: 4px; font-size: 14px; font-weight: bold; color: #fff;}
+    .journal-entry { margin-bottom: 15px; line-height: 1.5; font-size: 16px; }
+
+    #minigame-ui { top: 10%; left: 50%; transform: translateX(-50%); text-align: center; font-size: 26px; font-weight: bold; }
+
+    @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
 </style>
 </head>
 <body>
 
 <canvas id="game"></canvas>
-<div id="ui">
-    <div class="hud">Echoes of Mohenjo-daro</div>
-    <div id="journal">
-        <h3>Field Journal</h3>
-        <ul id="journalList">
-            <li style="color: #fff">Arrived at Trench 4.</li>
-            <li style="color: #fff">Site appears undisturbed.</li>
-        </ul>
+
+<div id="ui-layer" class="theme-modern">
+    <div id="journal-btn" class="panel" onclick="toggleJournal()">📖 [J] Journal</div>
+    <div id="hud-prompt" class="panel hidden">Press [E] to Interact</div>
+    
+    <div id="dialog-box" class="panel hidden">
+        <canvas class="portrait-canvas" id="dialog-portrait" width="64" height="64"></canvas>
+        <div class="dialog-content">
+            <span class="dialog-speaker" id="dialog-speaker">Name</span>
+            <span id="dialog-text">Text goes here.</span>
+        </div>
     </div>
-    <div id="prompt">Press [E] to Interact</div>
+
+    <div id="inventory-panel" class="panel hidden">
+        <h3>Inventory</h3><div class="inv-grid" id="inv-grid"></div>
+    </div>
+
+    <div id="journal-panel" class="panel hidden">
+        <h3>Field Journal</h3><div id="journal-content"></div>
+    </div>
+
+    <div id="minigame-ui" class="panel hidden"><span id="minigame-text"></span></div>
 </div>
 
 <script>
+/**
+ * ECHOES OF MOHENJO-DARO
+ * Engine: Single-File HTML5 Canvas Caching Engine
+ */
+
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-
-function resize() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-    if (leftPan) leftPan.x = canvas.width / 2 - 200;
-    if (rightPan) rightPan.x = canvas.width / 2 + 200;
-    initWeights(); // reset puzzle weights to screen center logic if resized
-}
+let cw, ch;
+function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; cw = canvas.width; ch = canvas.height; ctx.imageSmoothingEnabled = false; }
 window.addEventListener('resize', resize);
+resize();
 
-// Input Handling
-let keys = {};
-let prevKeys = {};
-window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
-window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+// --- STATE MACHINE & GLOBALS ---
+let currentState = 'MODERN_CAMP'; 
+let eraTheme = 'modern';
+let timeElapsed = 0;
+const mapW = 1200, mapH = 800;
 
-let mouse = { x: 0, y: 0, isDown: false, dx: 0, dy: 0 };
-window.addEventListener('mousemove', e => {
-    mouse.dx = e.clientX - mouse.x;
-    mouse.dy = e.clientY - mouse.y;
-    mouse.x = e.clientX;
-    mouse.y = e.clientY;
+const keys = { w: false, a: false, s: false, d: false, e: false, i: false, j: false };
+const prevKeys = { ...keys };
+const mouse = { x: 0, y: 0, isDown: false };
 
-    if (sceneMode === 'PUZZLE' && draggedWeight) {
-        draggedWeight.x = e.clientX - draggedWeight.offX;
-        draggedWeight.y = e.clientY - draggedWeight.offY;
+// Player Object (Hitbox centered at feet for precise AABB & Y-Sorting)
+const player = { x: 200, y: 400, w: 24, h: 12, drawW: 32, drawH: 48, drawOffY: -36, speed: 220, sprite: null, animTimer: 0, dir: 1 };
+
+let entities = []; 
+let solids = []; // Strict AABB collision boundaries
+let floors = []; // Layer drawn UNDER the player, used for Z-sorting fix (Bridges)
+let particles = [];
+
+const inventory = {
+    modern: [{id: 'trowel', count: 1}, {id: 'brush', count: 1}, {id: 'camera', count: 1}],
+    ancient: [{id: 'pot', count: 1}, {id: 'lapis', count: 3}]
+};
+const flags = { gateOpen: false, brushingComplete: false, tradeComplete: false };
+let activeDialogue = null;
+let interactTarget = null;
+let scaleMinigameActive = false;
+
+// Caches
+const Sprites = {};
+const Portraits = {};
+const Icons = {};
+let dirtCanvas, dirtCtx;
+let brushGrid = new Array(400).fill(false); 
+
+// --- OFF-SCREEN PROCEDURAL CACHING ---
+function createCache(w, h, renderFunc) {
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const cx = c.getContext('2d');
+    cx.imageSmoothingEnabled = false;
+    renderFunc(cx, w, h);
+    return c;
+}
+
+function initSprites() {
+    // Environment
+    Sprites.fence = createCache(64, 64, (c, w, h) => {
+        c.strokeStyle = '#555'; c.lineWidth = 2; c.beginPath(); c.moveTo(32,0); c.lineTo(32,h); c.stroke(); 
+        c.strokeStyle = '#7f8c8d'; c.lineWidth = 1;
+        for(let i=0; i<w; i+=8) { c.beginPath(); c.moveTo(i, 0); c.lineTo(i+8, h); c.stroke(); c.beginPath(); c.moveTo(i+8, 0); c.lineTo(i, h); c.stroke(); }
+    });
+    Sprites.gate = createCache(64, 120, (c, w, h) => {
+        c.fillStyle = '#333'; c.fillRect(0,0,10,h); c.fillRect(w-10,0,10,h); c.fillRect(0,0,w,10);
+        c.strokeStyle = '#95a5a6'; c.lineWidth = 2;
+        for(let i=0; i<h; i+=10) { c.beginPath(); c.moveTo(0,i); c.lineTo(w,i+10); c.stroke(); c.beginPath(); c.moveTo(w,i); c.lineTo(0,i+10); c.stroke(); }
+        c.fillStyle = '#e74c3c'; c.fillRect(w/2-10, h/2-10, 20, 20); // Lock
+    });
+    Sprites.tent = createCache(140, 100, (c, w, h) => {
+        c.fillStyle = '#4a5d23'; c.beginPath(); c.moveTo(w/2, 0); c.lineTo(w, h); c.lineTo(0, h); c.fill();
+        c.fillStyle = '#3a4a1c'; c.beginPath(); c.moveTo(w/2, 0); c.lineTo(w, h); c.lineTo(w/2, h); c.fill();
+        c.fillStyle = '#111'; c.fillRect(w/2 - 20, h - 40, 40, 40);
+    });
+    Sprites.table = createCache(80, 50, (c, w, h) => {
+        c.fillStyle = '#b0bec5'; c.fillRect(0, 15, w, 15);
+        c.fillStyle = '#78909c'; c.fillRect(5, 30, 6, 20); c.fillRect(w-11, 30, 6, 20);
+        c.fillStyle = '#111'; c.fillRect(20, 0, 24, 15); c.fillStyle = '#4fc3f7'; c.fillRect(22, 2, 20, 10);
+    });
+    Sprites.dirtMound = createCache(80, 60, (c, w, h) => {
+        c.fillStyle = '#5d4037'; c.beginPath(); c.ellipse(w/2, h/2+10, w/2, h/3, 0, 0, 6.28); c.fill();
+        c.fillStyle = '#4e342e'; c.beginPath(); c.ellipse(w/2, h/2, w/2.5, h/4, 0, 0, 6.28); c.fill();
+    });
+    Sprites.trenchBg = createCache(100, 100, (c, w, h) => {
+        c.fillStyle = '#2c1e16'; c.fillRect(0,0,w,h); c.fillStyle = '#3e2723'; c.fillRect(10,10,w-20,h-20); c.fillStyle = '#bf360c'; c.fillRect(20,20,w-40,h-40);
+    });
+    Sprites.plankBridge = createCache(100, 60, (c, w, h) => {
+        c.fillStyle = '#795548'; c.fillRect(0,0,w,h); c.fillStyle = '#3e2723'; for(let y=15; y<h; y+=15) c.fillRect(0, y, w, 2);
+    });
+
+    // Ancient Environment
+    Sprites.house = createCache(120, 100, (c, w, h) => {
+        c.fillStyle = '#d2b48c'; c.fillRect(0,0,w,h); c.fillStyle = '#b09572'; c.fillRect(0, 0, w*0.15, h); c.fillRect(0, h*0.85, w, h*0.15);
+        c.fillStyle = '#3e2723'; for(let x=20; x<w-10; x+=25) c.fillRect(x, 10, 8, 8); // Beams
+    });
+    Sprites.well = createCache(80, 80, (c, w, h) => {
+        c.fillStyle = '#7f8c8d'; c.beginPath(); c.arc(40, 40, 40, 0, 6.28); c.fill();
+        c.fillStyle = '#bdc3c7'; c.beginPath(); c.arc(40, 40, 32, 0, 6.28); c.fill();
+        c.fillStyle = '#111'; c.beginPath(); c.arc(40, 40, 24, 0, 6.28); c.fill(); 
+        c.fillStyle = '#188f8d'; c.beginPath(); c.arc(40, 40, 20, 0, 6.28); c.fill(); // Water
+    });
+    Sprites.waterAnim = createCache(128, 128, (c, w, h) => {
+        c.fillStyle = '#0f5e5c'; c.fillRect(0,0,w,h); c.strokeStyle = '#188f8d'; c.lineWidth = 2;
+        for(let y=10; y<h; y+=20) { c.beginPath(); c.moveTo(0, y); c.lineTo(w, y + Math.sin(y)*10); c.stroke(); }
+    });
+    Sprites.stoneBridge = createCache(120, 100, (c, w, h) => {
+        c.fillStyle = '#95a5a6'; c.fillRect(0,0,w,h); c.strokeStyle = '#7f8c8d'; c.lineWidth = 2;
+        for(let x=0; x<w; x+=20) for(let y=0; y<h; y+=20) c.strokeRect(x,y,20,20);
+    });
+    
+    const drawStall = (c1, c2) => createCache(80, 60, (c, w, h) => {
+        c.fillStyle = '#8b4513'; c.fillRect(10, 20, 60, 40);
+        for(let x=0; x<w; x+=16) { c.fillStyle = (x/16)%2===0 ? c1 : c2; c.fillRect(x, 0, 16, 25); } 
+    });
+    Sprites.stall1 = drawStall('#2980b9', '#f1c40f'); // Blue/Yellow
+    Sprites.stall2 = drawStall('#c0392b', '#ecf0f1'); // Red/White
+    Sprites.stall3 = drawStall('#27ae60', '#f1c40f'); // Green/Yellow
+
+    // Characters (Scale 2x to 32x48)
+    const drawChar = (skin, top, bot, hair) => createCache(32, 48, (c) => {
+        c.scale(2, 2);
+        c.fillStyle = skin; c.fillRect(5, 2, 6, 6); // Head
+        c.fillStyle = hair; c.fillRect(4, 0, 8, 3); // Hair
+        if(hair !== '#111' && hair !== '#000') c.fillRect(4, 3, 2, 4); // Bun/tail
+        c.fillStyle = top; c.fillRect(4, 8, 8, 10); // Torso
+        c.fillStyle = bot; c.fillRect(5, 18, 2, 6); c.fillRect(9, 18, 2, 6); // Legs
+    });
+    
+    Sprites.maya = drawChar('#f1c27d', '#546e7a', '#1e88e5', '#3e2723'); 
+    Sprites.kavir = drawChar('#d2a679', '#ffffff', '#ffffff', '#8b0000');
+    Sprites.guard = drawChar('#8d5524', '#263238', '#1a2421', '#111');
+    Sprites.worker = drawChar('#d2a679', '#ff9800', '#37474f', '#ffeb3b');
+    Sprites.merchant = drawChar('#b8860b', '#2980b9', '#2980b9', '#d2b48c');
+    Sprites.villager = drawChar('#a0522d', '#d3d3d3', '#d3d3d3', '#000');
+
+    // Portraits
+    const drawPortrait = (bg, skin, headwear) => createCache(64, 64, (c) => {
+        c.scale(4, 4); c.fillStyle = bg; c.fillRect(0,0,16,16); c.fillStyle = skin; c.fillRect(4,4,8,8);
+        c.fillStyle = headwear; c.fillRect(3,2,10,4); c.fillStyle = '#000'; c.fillRect(5,7,1,1); c.fillRect(10,7,1,1);
+    });
+    Portraits.maya = drawPortrait('#34495e', '#f1c27d', '#3e2723');
+    Portraits.guard = drawPortrait('#2c3e50', '#8d5524', '#111');
+    Portraits.worker = drawPortrait('#d35400', '#d2a679', '#ffeb3b');
+    Portraits.merchant = drawPortrait('#1a110a', '#b8860b', '#d2b48c');
+
+    // Icons
+    const drawItem = (col1, col2, type) => createCache(32, 32, (c) => {
+        if(type==='box') { c.fillStyle=col1; c.fillRect(4,8,24,16); c.fillStyle=col2; c.fillRect(8,12,16,8); }
+        if(type==='circ') { c.fillStyle=col1; c.beginPath(); c.arc(16,16,12,0,6.28); c.fill(); c.fillStyle=col2; c.beginPath(); c.arc(16,16,6,0,6.28); c.fill(); }
+    });
+    Icons.trowel = drawItem('#bdc3c7', '#7f8c8d', 'box'); 
+    Icons.brush = drawItem('#d35400', '#e67e22', 'box'); 
+    Icons.camera = drawItem('#2c3e50', '#95a5a6', 'box');
+    Icons.lapis = drawItem('#20509a', '#2c3e50', 'circ');
+    Icons.chert = drawItem('#7f8c8d', '#2c3e50', 'box'); 
+    Icons.spice = drawItem('#e67e22', '#d35400', 'circ');
+
+    // Terracotta Pot Icon (New Artifact)
+    Icons.pot = createCache(32, 32, (c) => {
+        c.fillStyle = '#8b4513';
+        c.beginPath(); c.ellipse(16, 18, 12, 10, 0, 0, 6.28); c.fill(); // body
+        c.fillRect(10, 6, 12, 4); // neck
+        c.fillStyle = '#a0522d'; c.fillRect(8, 4, 16, 4); // rim
+    });
+}
+
+// --- MAP BUILDERS & STRICT COLLISION ---
+function addSolid(x, y, w, h, id) { solids.push({x, y, w, h, id}); }
+function addFloor(sprite, x, y, w, h) { floors.push({sprite, x, y, w, h}); }
+function spawnEntity(sprite, x, y, w, h, drawW, drawH, drawOffY, type, extra = {}) {
+    let e = { sprite, x, y, w, h, drawW, drawH, drawOffY, type, ...extra };
+    entities.push(e); return e;
+}
+
+function buildModernCamp() {
+    entities = []; solids = []; floors = [];
+    player.sprite = Sprites.maya;
+    player.x = 200; player.y = 400;
+
+    // Fences
+    for(let i=0; i<1200; i+=64) {
+        spawnEntity(Sprites.fence, i, 0, 64, 20, 64, 64, -44, 'prop'); addSolid(i, 0, 64, 20, 'fence');
+        spawnEntity(Sprites.fence, i, 780, 64, 20, 64, 64, -44, 'prop'); addSolid(i, 780, 64, 20, 'fence');
     }
-});
-window.addEventListener('mousedown', e => {
-    mouse.isDown = true;
-    if (sceneMode === 'PUZZLE') {
-        for (let i = weights.length - 1; i >= 0; i--) { // Reverse for visual z-index
-            let w = weights[i];
-            let wx = w.onPan ? canvas.width/2 - 200 - w.w/2 + (w.id * 15 - 45) : w.x;
-            let wy = w.onPan ? leftPan.y - w.h/2 - 10 : w.y;
-            
-            if (e.clientX >= wx && e.clientX <= wx + w.w && e.clientY >= wy && e.clientY <= wy + w.h) {
-                w.dragging = true;
-                w.onPan = false;
-                w.x = wx; w.y = wy; // detach from pan visually
-                draggedWeight = w;
-                w.offX = e.clientX - w.x;
-                w.offY = e.clientY - w.y;
-                break;
-            }
+    for(let i=0; i<800; i+=64) {
+        spawnEntity(Sprites.fence, 0, i, 20, 64, 64, 64, -44, 'prop'); addSolid(0, i, 20, 64, 'fence');
+        if(i < 300 || i > 400) { 
+            spawnEntity(Sprites.fence, 1180, i, 20, 64, 64, 64, -44, 'prop'); addSolid(1180, i, 20, 64, 'fence');
         }
     }
-});
-window.addEventListener('mouseup', e => {
-    mouse.isDown = false;
-    if (sceneMode === 'PUZZLE' && draggedWeight) {
-        draggedWeight.dragging = false;
-        let cx = canvas.width / 2;
-        let pX = cx - 200;
-        let pY = leftPan.y;
-        
-        let dist = Math.hypot((draggedWeight.x + draggedWeight.w/2) - pX, (draggedWeight.y + draggedWeight.h/2) - pY);
-        if (dist < 150) {
-            draggedWeight.onPan = true;
-        }
-        draggedWeight = null;
+    
+    // PHYSICAL GATE
+    if (!flags.gateOpen) {
+        spawnEntity(Sprites.gate, 1160, 320, 40, 100, 64, 120, -10, 'gate_vis');
+        addSolid(1160, 320, 40, 100, 'gate_col');
     }
-});
 
-// Game State
-let gameState = 'SCENE_1'; // SCENE_1, SCENE_2
-let sceneMode = 'EXPLORE'; // EXPLORE, BRUSHING, PUZZLE
-let warpActive = false;
-let warpTimer = 0;
-let brushProgress = 0;
-let lastMousePos = {x: 0, y: 0};
+    // Strict 3 NPCs as requested
+    spawnEntity(Sprites.tent, 150, 150, 120, 60, 140, 100, -40, 'prop'); addSolid(150, 150, 120, 60, 'prop');
+    spawnEntity(Sprites.table, 350, 200, 80, 30, 80, 50, -20, 'prop'); addSolid(350, 200, 80, 30, 'prop');
+    
+    spawnEntity(Sprites.worker, 370, 170, 24, 12, 32, 48, -36, 'npc', {name: 'Archaeologist', port: Portraits.worker, text: "Logs are updating.", state: 'working'});
+    spawnEntity(Sprites.worker, 500, 500, 24, 12, 32, 48, -36, 'npc', {name: 'Cleaner', port: Portraits.worker, text: "Dust never sleeps.", state: 'working'});
+    
+    spawnEntity(Sprites.guard, 1100, 400, 24, 12, 32, 48, -36, 'npc', {
+        name: 'Security', port: Portraits.guard, text: "Site is secure, Maya. I'll open the gate for you.",
+        onTalk: () => {
+            flags.gateOpen = true;
+            solids = solids.filter(s => s.id !== 'gate_col');
+            entities = entities.filter(e => e.type !== 'gate_vis');
+        }
+    });
+}
 
-// Camera
-let camX = 0;
-let camY = 0;
+function buildModernDig() {
+    entities = []; solids = []; floors = [];
+    player.sprite = Sprites.maya;
+    player.x = 50; player.y = 400;
 
-// Entities
-let player = { type: 'PLAYER', x: 250, y: 450, w: 30, h: 30, depth: 50, color: '#3498db', vx: 0, vy: 0, accel: 1800, friction: 0.82, maxSpeed: 250 };
-let mound = { type: 'MOUND', x: 450, y: 450, w: 70, h: 70, brushed: false, collected: false };
-let walls = [];
-let entities = [];
+    for(let i=0; i<1200; i+=80) {
+        spawnEntity(Sprites.dirtMound, i, 20, 80, 40, 80, 60, -20, 'prop'); addSolid(i, 0, 80, 60, 'mound');
+        spawnEntity(Sprites.dirtMound, i, 740, 80, 40, 80, 60, -20, 'prop'); addSolid(i, 740, 80, 60, 'mound');
+    }
+    
+    // TRENCH COLLISION (Gap left specifically for the bridge to enforce perfect AABB)
+    let tx = 300, tw = 600;
+    addSolid(tx, 150, tw, 200, 'trench'); 
+    addSolid(tx, 430, tw, 220, 'trench');
+    
+    // Z-SORTING FIX: Plank bridge added to 'floors' array (drawn below entities)
+    addFloor(Sprites.plankBridge, tx, 350, tw, 80);
 
-// Puzzle State
-let puzzleSolved = false;
-let balanceTimer = 0;
-let weights = [];
+    // WORKING EXCAVATORS (Stationed inside trench)
+    const positions = [[350, 220], [800, 250], [450, 500], [700, 550]];
+    positions.forEach(pos => {
+        spawnEntity(Sprites.worker, pos[0], pos[1], 24, 12, 32, 48, -36, 'npc', { state: 'working' });
+    });
+
+    // Key NPC (Outside trench for easy access)
+    spawnEntity(Sprites.worker, 250, 400, 24, 12, 32, 48, -36, 'npc', {
+        name:'Worker', port:Portraits.worker, text:"Let me see. I'll take the brush.", bubble: true,
+        onTalk: () => setTimeout(() => switchState('MINIGAME_BRUSH'), 1000)
+    });
+}
+
+function buildAncientCity() {
+    entities = []; solids = []; floors = [];
+    player.sprite = Sprites.kavir;
+    player.x = 100; player.y = 400;
+
+    // DENSE MUD-BRICK ENVIRONMENT
+    // Borders
+    addSolid(0, 0, 1000, 60, 'wall'); addSolid(0, 740, 1000, 60, 'wall'); addSolid(0, 0, 40, 800, 'wall');
+    
+    // Houses
+    const houses = [[60, 80], [200, 80], [400, 80], [600, 80], [60, 620], [250, 620], [450, 620]];
+    houses.forEach(p => {
+        spawnEntity(Sprites.house, p[0], p[1], 120, 80, 120, 100, -20, 'prop');
+        addSolid(p[0], p[1], 120, 80, 'house');
+    });
+
+    // Central Well
+    spawnEntity(Sprites.well, 350, 350, 80, 60, 80, 80, -20, 'prop'); addSolid(350, 350, 80, 60, 'well');
+
+    // RIGHT-SIDE RIVER BARRIER & COLLISION (Gap left for bridge)
+    let rx = 1000, rw = 200;
+    addSolid(rx, 0, rw, 350, 'water');
+    addSolid(rx, 450, rw, 350, 'water');
+    
+    // Z-SORTING FIX: Stone bridge added to 'floors'
+    addFloor(Sprites.stoneBridge, rx, 350, rw, 100);
+
+    // BUSTLING CROWDS & SHOPS
+    spawnEntity(Sprites.stall1, 650, 250, 70, 30, 80, 60, -30, 'prop'); addSolid(650, 250, 70, 30, 'stall');
+    spawnEntity(Sprites.stall2, 800, 350, 70, 30, 80, 60, -30, 'prop'); addSolid(800, 350, 70, 30, 'stall');
+    spawnEntity(Sprites.stall3, 650, 450, 70, 30, 80, 60, -30, 'prop'); addSolid(650, 450, 70, 30, 'stall');
+
+    // Static NPCs at stalls
+    spawnEntity(Sprites.villager, 670, 290, 24, 12, 32, 48, -36, 'npc');
+    spawnEntity(Sprites.villager, 670, 490, 24, 12, 32, 48, -36, 'npc');
+    spawnEntity(Sprites.merchant, 830, 390, 24, 12, 32, 48, -36, 'npc', {
+        name: 'Merchant', port: Portraits.merchant, text: "Match the weights accurately, traveler.",
+        onTalk: () => { if(!flags.tradeComplete) initScaleMinigame(); }
+    });
+
+    // Wandering Villagers (Alleys)
+    for(let i=0; i<5; i++) {
+        spawnEntity(Sprites.villager, 150 + Math.random()*300, 200 + Math.random()*300, 24, 12, 32, 48, -36, 'ai_npc', {
+            state: 'idle', timer: 1, tx: 0, ty: 0
+        });
+    }
+}
+
+// --- MINIGAMES ---
+function initBrushMinigame() {
+    dirtCanvas = document.createElement('canvas'); dirtCanvas.width = cw; dirtCanvas.height = ch;
+    dirtCtx = dirtCanvas.getContext('2d');
+    dirtCtx.fillStyle = '#4e342e'; dirtCtx.fillRect(0,0,cw,ch); 
+    brushGrid.fill(false); flags.brushingComplete = false;
+    document.getElementById('minigame-ui').classList.remove('hidden');
+    document.getElementById('minigame-text').innerText = "Click & Drag to Brush Dirt";
+}
+
+let scaleWeights = [];
 let draggedWeight = null;
-let leftPan = { x: 0, y: 0, r: 80 };
-let rightPan = { x: 0, y: 0, r: 80, weight: 11 };
-
-function initWeights() {
-    let cx = window.innerWidth / 2;
-    let cy = window.innerHeight;
-    weights = [
-        {id: 1, val: 1, x: cx - 180, y: cy - 120, w: 30, h: 30, dragging: false, onPan: false},
-        {id: 2, val: 2, x: cx - 120, y: cy - 120, w: 40, h: 40, dragging: false, onPan: false},
-        {id: 3, val: 4, x: cx - 50, y: cy - 120, w: 50, h: 50, dragging: false, onPan: false},
-        {id: 4, val: 8, x: cx + 30, y: cy - 120, w: 60, h: 60, dragging: false, onPan: false},
-        {id: 5, val: 16, x: cx + 120, y: cy - 120, w: 70, h: 70, dragging: false, onPan: false}
+function initScaleMinigame() {
+    scaleMinigameActive = true;
+    scaleWeights = [
+        {val: 1, x: cw/2 - 100, y: ch/2 + 200, w: 40, h: 40, onPan: false},
+        {val: 1, x: cw/2 - 40, y: ch/2 + 200, w: 40, h: 40, onPan: false},
+        {val: 2, x: cw/2 + 20, y: ch/2 + 200, w: 60, h: 60, onPan: false},
+        {val: 5, x: cw/2 + 100, y: ch/2 + 200, w: 80, h: 80, onPan: false}
     ];
 }
 
-function initScene1() {
-    walls = [
-        // Outer trench boundaries
-        { type: 'WALL', x: 0, y: 0, w: 1000, h: 50, depth: 80, color: '#8B5A2B' },
-        { type: 'WALL', x: 0, y: 0, w: 50, h: 800, depth: 80, color: '#8B5A2B' },
-        { type: 'WALL', x: 0, y: 800, w: 1050, h: 50, depth: 80, color: '#8B5A2B' },
-        { type: 'WALL', x: 1000, y: 0, w: 50, h: 800, depth: 80, color: '#8B5A2B' },
-        // Trench dirt partitions
-        { type: 'WALL', x: 200, y: 200, w: 400, h: 80, depth: 50, color: '#9c6631' },
-        { type: 'WALL', x: 200, y: 200, w: 80, h: 300, depth: 50, color: '#9c6631' },
-        { type: 'WALL', x: 700, y: 400, w: 80, h: 300, depth: 50, color: '#9c6631' }
-    ];
-    entities = [...walls, mound, player];
+// --- STATE MANAGER ---
+function switchState(newState) {
+    currentState = newState;
+    activeDialogue = null; scaleMinigameActive = false;
+    document.querySelectorAll('.panel:not(#hud-prompt):not(#journal-btn)').forEach(p => p.classList.add('hidden'));
+
+    if (newState === 'MODERN_CAMP') { eraTheme = 'modern'; buildModernCamp(); }
+    else if (newState === 'MODERN_DIG') { eraTheme = 'modern'; buildModernDig(); }
+    else if (newState === 'MINIGAME_BRUSH') { eraTheme = 'modern'; initBrushMinigame(); }
+    else if (newState === 'TRANSITION_WARP') {
+        timeElapsed = 0; particles = [];
+        for(let i=0; i<300; i++) particles.push({ angle: Math.random()*6.28, dist: Math.random()*50, speed: 50+Math.random()*200, col: ['#2ecc71', '#3498db', '#f1c40f'][Math.floor(Math.random()*3)] });
+    }
+    else if (newState === 'ANCIENT_CITY') { eraTheme = 'ancient'; buildAncientCity(); }
+    
+    document.getElementById('ui-layer').className = eraTheme === 'modern' ? 'theme-modern' : 'theme-ancient';
 }
 
-function initScene2() {
-    walls = [
-        // Restored towering walls
-        { type: 'WALL', x: 0, y: 0, w: 1000, h: 50, depth: 250, color: '#C86C51' },
-        { type: 'WALL', x: 0, y: 0, w: 50, h: 800, depth: 250, color: '#C86C51' },
-        { type: 'WALL', x: 0, y: 800, w: 1050, h: 50, depth: 250, color: '#C86C51' },
-        { type: 'WALL', x: 1000, y: 0, w: 50, h: 800, depth: 250, color: '#C86C51' },
-        // Rooms
-        { type: 'WALL', x: 300, y: 50, w: 80, h: 400, depth: 200, color: '#b55a40' },
-        { type: 'WALL', x: 300, y: 450, w: 300, h: 80, depth: 200, color: '#b55a40' },
-        { type: 'WALL', x: 700, y: 450, w: 300, h: 80, depth: 200, color: '#b55a40' },
-        // Amphorae decor
-        { type: 'WALL', x: 650, y: 300, w: 40, h: 40, depth: 60, color: '#D2691E' },
-        { type: 'WALL', x: 610, y: 340, w: 40, h: 40, depth: 60, color: '#D2691E' }
-    ];
-    let workbench = { type: 'WORKBENCH', x: 450, y: 300, w: 140, h: 70, depth: 60, color: '#5C4033' };
-    
-    // Player remains at same coordinate organically, but let's clamp just in case
-    if(player.x > 900) player.x = 900;
-    
-    entities = [...walls, workbench, player];
-    gameState = 'SCENE_2';
+// --- UI / INPUTS ---
+function toggleJournal() {
+    document.getElementById('journal-panel').classList.toggle('hidden');
+    let c = document.getElementById('journal-content');
+    c.innerHTML = eraTheme === 'modern' 
+        ? `<div class="journal-entry">- Objective: Report to Security.<br>- Proceed to Trench.</div>`
+        : `<div class="journal-entry"><b>Barter Rates:</b><br><br>Trade Lapis Lazuli for 3 Spices.<br>Ratio: 3 Lapis = 2 Chert Weights</div>`;
 }
 
-function addToJournal(text) {
-    const ul = document.getElementById('journalList');
-    const li = document.createElement('li');
-    li.innerText = text;
-    li.style.color = '#f1c40f';
-    li.style.opacity = '0';
-    li.style.transition = 'opacity 0.5s ease-in, color 2s ease-out';
-    ul.appendChild(li);
-    
-    // Force reflow for animation
-    void li.offsetWidth;
-    li.style.opacity = '1';
-    
-    setTimeout(() => li.style.color = '#fff', 2000);
+window.addEventListener('keydown', e => { 
+    if(keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = true; 
+    if(e.key.toLowerCase() === 'j') toggleJournal();
+});
+window.addEventListener('keyup', e => { if(keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = false; });
+window.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; 
+    if(scaleMinigameActive && draggedWeight) { draggedWeight.x = mouse.x - draggedWeight.w/2; draggedWeight.y = mouse.y - draggedWeight.h/2; }
+});
+window.addEventListener('mousedown', () => { mouse.isDown = true;
+    if(scaleMinigameActive) draggedWeight = scaleWeights.slice().reverse().find(w => mouse.x > w.x && mouse.x < w.x+w.w && mouse.y > w.y && mouse.y < w.y+w.h) || null;
+});
+window.addEventListener('mouseup', () => { mouse.isDown = false;
+    if(scaleMinigameActive && draggedWeight) {
+        let panX = cw/2 + 100, panY = ch/2;
+        if(Math.hypot((draggedWeight.x+draggedWeight.w/2)-panX, (draggedWeight.y+draggedWeight.h/2)-panY) < 120) {
+            draggedWeight.onPan = true; draggedWeight.x = panX - draggedWeight.w/2 + (Math.random()*20-10); draggedWeight.y = panY - draggedWeight.h/2 + (Math.random()*20-10);
+        } else { draggedWeight.onPan = false; }
+        draggedWeight = null;
+        if(scaleWeights.filter(w => w.onPan).reduce((s, w) => s + w.val, 0) === 2) { 
+            flags.tradeComplete = true; scaleMinigameActive = false;
+            triggerDialogue("Merchant", "Perfect balance. The spices are yours.", Portraits.merchant);
+            inventory.ancient.push({id: 'spice', count: 3});
+        }
+    }
+});
+
+function triggerDialogue(speaker, text, portrait, cb) {
+    activeDialogue = { cb };
+    document.getElementById('dialog-box').classList.remove('hidden');
+    document.getElementById('dialog-speaker').innerText = speaker;
+    document.getElementById('dialog-text').innerText = text;
+    const pCtx = document.getElementById('dialog-portrait').getContext('2d');
+    pCtx.imageSmoothingEnabled = false; pCtx.clearRect(0,0,64,64); pCtx.drawImage(portrait, 0, 0);
 }
 
-function shadeColor(color, percent) {
-    let R = parseInt(color.substring(1,3),16);
-    let G = parseInt(color.substring(3,5),16);
-    let B = parseInt(color.substring(5,7),16);
-    R = parseInt(R * (100 + percent) / 100);
-    G = parseInt(G * (100 + percent) / 100);
-    B = parseInt(B * (100 + percent) / 100);
-    R = (R<255)?R:255; G = (G<255)?G:255; B = (B<255)?B:255;
-    R = (R>0)?R:0; G = (G>0)?G:0; B = (B>0)?B:0;
-    let RR = ((R.toString(16).length==1)?"0"+R.toString(16):R.toString(16));
-    let GG = ((G.toString(16).length==1)?"0"+G.toString(16):G.toString(16));
-    let BB = ((B.toString(16).length==1)?"0"+B.toString(16):B.toString(16));
-    return "#"+RR+GG+BB;
+function checkAABB(nx, ny, w, h) {
+    if(nx < 0 || ny < 0 || nx + w > mapW || ny + h > mapH) return true; // Bounds
+    for(let s of solids) {
+        if(nx < s.x + s.w && nx + w > s.x && ny < s.y + s.h && ny + h > s.y) return true; 
+    }
+    return false;
 }
 
-// Pseudo-3D Extrusion Engine
-function drawExtruded(ctx, x, y, w, h, depth, color) {
-    const ox = depth * 0.3;
-    const oy = -depth;
-
-    // Left Face (Visible because camera shifts Up and Right)
-    ctx.fillStyle = shadeColor(color, -40);
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineTo(x + ox, y + oy);
-    ctx.lineTo(x + ox, y + h + oy);
-    ctx.lineTo(x, y + h);
-    ctx.fill();
-    
-    // Front Face
-    ctx.fillStyle = shadeColor(color, -20);
-    ctx.beginPath();
-    ctx.moveTo(x, y + h);
-    ctx.lineTo(x + ox, y + h + oy);
-    ctx.lineTo(x + w + ox, y + h + oy);
-    ctx.lineTo(x + w, y + h);
-    ctx.fill();
-
-    // Top Face
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(x + ox, y + oy);
-    ctx.lineTo(x + w + ox, y + oy);
-    ctx.lineTo(x + w + ox, y + h + oy);
-    ctx.lineTo(x + ox, y + h + oy);
-    ctx.fill();
-    
-    // Optional Outline for crispness
-    ctx.strokeStyle = shadeColor(color, -60);
-    ctx.lineWidth = 1;
-    ctx.stroke();
-}
-
-function checkCollision(a, b) {
-    return a.x < b.x + b.w &&
-           a.x + a.w > b.x &&
-           a.y < b.y + b.h &&
-           a.y + a.h > b.y;
-}
-
+// --- UPDATE LOOP ---
 function update(dt) {
-    let promptUI = document.getElementById('prompt');
+    timeElapsed += dt;
 
-    if (sceneMode === 'EXPLORE') {
-        // Crisp Velocity based WASD Physics
-        if (keys['w']) player.vy -= player.accel * dt;
-        if (keys['s']) player.vy += player.accel * dt;
-        if (keys['a']) player.vx -= player.accel * dt;
-        if (keys['d']) player.vx += player.accel * dt;
+    if(keys.i && !prevKeys.i) {
+        document.getElementById('inventory-panel').classList.toggle('hidden');
+        let grid = document.getElementById('inv-grid'); grid.innerHTML = '';
+        let inv = eraTheme === 'modern' ? inventory.modern : inventory.ancient;
+        inv.forEach(item => {
+            let div = document.createElement('div'); div.className = 'inv-slot';
+            let c = document.createElement('canvas'); c.width=32; c.height=32; c.getContext('2d').drawImage(Icons[item.id],0,0);
+            div.appendChild(c); div.innerHTML += `<span class="item-count">${item.count}</span>`; grid.appendChild(div);
+        });
+    }
 
-        player.vx *= Math.pow(player.friction, dt * 60);
-        player.vy *= Math.pow(player.friction, dt * 60);
+    if(keys.e && !prevKeys.e && activeDialogue) {
+        document.getElementById('dialog-box').classList.add('hidden');
+        if(activeDialogue.cb) activeDialogue.cb(); activeDialogue = null;
+        Object.assign(prevKeys, keys); return;
+    }
+    if(activeDialogue || scaleMinigameActive) { Object.assign(prevKeys, keys); return; }
 
-        let speed = Math.hypot(player.vx, player.vy);
-        if (speed > player.maxSpeed) {
-            player.vx = (player.vx / speed) * player.maxSpeed;
-            player.vy = (player.vy / speed) * player.maxSpeed;
-        }
+    if (['MODERN_CAMP', 'MODERN_DIG', 'ANCIENT_CITY'].includes(currentState)) {
+        let dx = 0, dy = 0;
+        if(keys.w) dy -= 1; if(keys.s) dy += 1;
+        if(keys.a) { dx -= 1; player.dir = -1; } if(keys.d) { dx += 1; player.dir = 1; }
+        if(dx !== 0 && dy !== 0) { let len = Math.sqrt(dx*dx + dy*dy); dx/=len; dy/=len; }
         
-        if (Math.abs(player.vx) < 1) player.vx = 0;
-        if (Math.abs(player.vy) < 1) player.vy = 0;
-
-        // Slide along walls (X Axis AABB)
-        player.x += player.vx * dt;
-        for (let e of entities) {
-            if ((e.type === 'WALL' || e.type === 'WORKBENCH') && checkCollision(player, e)) {
-                if (player.vx > 0) player.x = e.x - player.w;
-                else if (player.vx < 0) player.x = e.x + e.w;
-                player.vx = 0;
-            }
+        if(dx !== 0) {
+            let nx = player.x + dx * player.speed * dt;
+            if(!checkAABB(nx, player.y, player.w, player.h)) player.x = nx;
         }
-        
-        // Slide along walls (Y Axis AABB)
-        player.y += player.vy * dt;
-        for (let e of entities) {
-            if ((e.type === 'WALL' || e.type === 'WORKBENCH') && checkCollision(player, e)) {
-                if (player.vy > 0) player.y = e.y - player.h;
-                else if (player.vy < 0) player.y = e.y + e.h;
-                player.vy = 0;
-            }
+        if(dy !== 0) {
+            let ny = player.y + dy * player.speed * dt;
+            if(!checkAABB(player.x, ny, player.w, player.h)) player.y = ny;
         }
 
-        // Interaction Proximity Check
-        let interactable = null;
-        let minDist = 120;
-        let cx1 = player.x + player.w/2;
-        let cy1 = player.y + player.h/2;
+        player.animTimer = (dx !== 0 || dy !== 0) ? player.animTimer + dt * 10 : 0;
 
-        for (let e of entities) {
-            if (e.type === 'MOUND' || e.type === 'WORKBENCH') {
-                let cx2 = e.x + e.w/2;
-                let cy2 = e.y + e.h/2;
-                let dist = Math.hypot(cx1 - cx2, cy1 - cy2);
-                if (dist < minDist) {
-                    minDist = dist;
-                    interactable = e;
-                }
-            }
-        }
-
-        if (interactable) {
-            promptUI.style.display = 'block';
-            if (interactable.type === 'MOUND') {
-                if (!interactable.brushed) {
-                    promptUI.innerText = "Press [E] to Brush Dirt";
-                    if (keys['e'] && !prevKeys['e']) {
-                        sceneMode = 'BRUSHING';
-                        lastMousePos = {x: mouse.x, y: mouse.y};
-                        promptUI.innerText = "Click and Drag Rapidly to Brush!";
-                    }
-                } else if (!interactable.collected) {
-                    promptUI.innerText = "Press [E] to Collect Seal";
-                    if (keys['e'] && !prevKeys['e']) {
-                        interactable.collected = true;
-                        addToJournal("Found a Steatite Seal.");
-                        addToJournal("Features a unicorn motif.");
-                        warpActive = true;
-                        warpTimer = 0;
-                        entities = entities.filter(e => e !== interactable);
-                        promptUI.style.display = 'none';
+        for(let e of entities) {
+            if(e.type === 'ai_npc') {
+                e.timer -= dt;
+                if(e.timer <= 0) {
+                    if(e.state === 'idle') {
+                        e.state = 'walk'; e.tx = e.x + (Math.random()*150 - 75); e.ty = e.y + (Math.random()*150 - 75);
+                        e.timer = 1 + Math.random()*2;
+                    } else {
+                        e.state = 'idle'; e.timer = 1 + Math.random()*2;
                     }
                 }
-            } else if (interactable.type === 'WORKBENCH' && !puzzleSolved) {
-                promptUI.innerText = "Press [E] to Inspect Scale";
-                if (keys['e'] && !prevKeys['e']) {
-                    sceneMode = 'PUZZLE';
-                    promptUI.style.display = 'none';
+                if(e.state === 'walk') {
+                    let adx = (e.tx > e.x ? 1 : -1) * 40 * dt; let ady = (e.ty > e.y ? 1 : -1) * 40 * dt;
+                    if(!checkAABB(e.x+adx, e.y+ady, e.w, e.h)) { e.x+=adx; e.y+=ady; } else { e.state='idle'; e.timer=1; }
                 }
             }
-        } else {
-            promptUI.style.display = 'none';
         }
 
-    } else if (sceneMode === 'BRUSHING') {
-        if (mouse.isDown) {
-            let dist = Math.hypot(mouse.x - lastMousePos.x, mouse.y - lastMousePos.y);
-            brushProgress += dist;
+        interactTarget = null;
+        let pCX = player.x + player.w/2, pCY = player.y + player.h/2;
+        for(let e of entities) {
+            if(e.text && Math.hypot(pCX - (e.x+e.w/2), pCY - (e.y+e.h/2)) < 60) { interactTarget = e; break; }
         }
-        lastMousePos = {x: mouse.x, y: mouse.y};
-
-        if (brushProgress > 4000) {
-            let m = entities.find(e => e.type === 'MOUND');
-            if (m) m.brushed = true;
-            sceneMode = 'EXPLORE';
-            promptUI.innerText = "Press [E] to Collect Seal";
-            brushProgress = 0;
-        }
-    } else if (sceneMode === 'PUZZLE') {
-        let leftSum = weights.filter(w => w.onPan).reduce((a, b) => a + b.val, 0);
-        let tilt = rightPan.weight - leftSum; 
         
-        let basePanY = canvas.height / 2 + 50;
-        let targetLeftY = basePanY - tilt * 12;
-        let targetRightY = basePanY + tilt * 12;
-        
-        // Physics smoothing for scale
-        leftPan.y += (targetLeftY - leftPan.y) * 8 * dt;
-        rightPan.y += (targetRightY - rightPan.y) * 8 * dt;
+        const prompt = document.getElementById('hud-prompt');
+        if(interactTarget) { prompt.classList.remove('hidden'); if(keys.e && !prevKeys.e) triggerDialogue(interactTarget.name, interactTarget.text, interactTarget.port, interactTarget.onTalk); } 
+        else { prompt.classList.add('hidden'); }
 
-        if (tilt === 0) {
-            balanceTimer += dt;
-            if (balanceTimer > 2 && !puzzleSolved) {
-                sceneMode = 'EXPLORE';
-                addToJournal("Weight matched exactly.");
-                addToJournal("Evidence of a strictly regulated economy.");
-                promptUI.style.display = 'none';
-                puzzleSolved = true;
-            }
-        } else {
-            balanceTimer = 0;
-        }
+        if (currentState === 'MODERN_CAMP' && flags.gateOpen && player.x > 1150) switchState('MODERN_DIG');
     }
-
-    // Warp temporal logic
-    if (warpActive) {
-        warpTimer += dt;
-        if (warpTimer > 1.5 && gameState === 'SCENE_1') {
-            initScene2();
-        }
-        if (warpTimer > 3) {
-            warpActive = false;
-        }
-    }
-
-    // Camera follow logic
-    let targetCamX = player.x + player.w/2 - canvas.width/2;
-    let targetCamY = player.y + player.h/2 - canvas.height/2;
-    camX += (targetCamX - camX) * 5 * dt;
-    camY += (targetCamY - camY) * 5 * dt;
-
-    // Track input edges
-    for (let k in keys) prevKeys[k] = keys[k];
-}
-
-function drawSceneBackground(ctx) {
-    if (gameState === 'SCENE_1') {
-        // Trench Floor
-        ctx.fillStyle = '#4a3219';
-        ctx.fillRect(-100, -100, 1500, 1500);
-        
-        // Grid String Lines
-        ctx.strokeStyle = 'rgba(255,255,255,0.15)';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([10, 10]);
-        for(let i=0; i<=1000; i+=100) {
-            ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 1000); ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(1000, i); ctx.stroke();
-        }
-        ctx.setLineDash([]);
-    } else {
-        // 2500 BCE Paved Mud-Brick Floor
-        ctx.fillStyle = '#6b4c3a';
-        ctx.fillRect(-100, -100, 1500, 1500);
-        
-        ctx.strokeStyle = 'rgba(0,0,0,0.1)';
-        ctx.lineWidth = 1;
-        for(let i=0; i<=1000; i+=40) {
-            ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 1000); ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(1000, i); ctx.stroke();
-        }
-    }
-}
-
-function renderEntities(ctx) {
-    // Y-Sorting (Painter's Algorithm)
-    entities.sort((a, b) => (a.y + a.h) - (b.y + b.h));
-    
-    for (let e of entities) {
-        if (e.type === 'PLAYER' || e.type === 'WALL' || e.type === 'WORKBENCH') {
-            drawExtruded(ctx, e.x, e.y, e.w, e.h, e.depth, e.color);
-        } else if (e.type === 'MOUND') {
-            let ch = e.brushed ? 5 : 25 - (brushProgress / 4000) * 20;
-            if (ch < 5) ch = 5;
-            let col = e.brushed ? '#a39b8b' : '#6b4c3a';
-            let ox = ch * 0.3;
-            let oy = -ch;
+    else if (currentState === 'MINIGAME_BRUSH') {
+        // BRUSH FIX: Strictly stop drawing when complete
+        if(mouse.isDown && !flags.brushingComplete) {
+            dirtCtx.globalCompositeOperation = 'destination-out';
+            dirtCtx.beginPath(); dirtCtx.arc(mouse.x, mouse.y, 60, 0, 6.28); dirtCtx.fill();
+            let col = Math.floor((mouse.x / cw) * 20), row = Math.floor((mouse.y / ch) * 20);
+            if(col>=0 && col<20 && row>=0 && row<20) brushGrid[row*20+col] = true;
             
-            // Base Mound
-            ctx.fillStyle = shadeColor(col, -20);
-            ctx.beginPath();
-            ctx.ellipse(e.x + e.w/2, e.y + e.h/2, e.w/2, e.w*0.35, 0, 0, Math.PI*2);
-            ctx.fill();
-            
-            // Extruded Top
-            ctx.fillStyle = col;
-            ctx.beginPath();
-            ctx.ellipse(e.x + e.w/2 + ox, e.y + e.h/2 + oy, e.w/2, e.w*0.35, 0, 0, Math.PI*2);
-            ctx.fill();
-
-            // Render Steatite Seal if brushed
-            if (e.brushed && !e.collected) {
-                ctx.fillStyle = '#e6c200'; 
-                let sx = e.x + e.w/2 + ox; 
-                let sy = e.y + e.h/2 + oy - 5;
-                
-                // Draw 2.5D Seal
-                drawExtruded(ctx, sx - 10, sy - 10, 20, 15, 4, '#e6c200');
-                
-                ctx.fillStyle = '#443';
-                ctx.fillRect(sx - 4 + 4*0.3, sy - 4 - 4, 8, 4); // Fake engraving on top face
+            if(brushGrid.filter(v=>v).length > 340) {
+                flags.brushingComplete = true; 
+                document.getElementById('minigame-text').innerText = "Artifact Found! Adding to Inventory...";
+                setTimeout(() => switchState('TRANSITION_WARP'), 2000); // Wait exactly 2s
             }
         }
     }
-}
-
-function drawLighting(ctx) {
-    let px = player.x + player.w/2 - camX;
-    let py = player.y + player.h/2 - camY;
-    
-    let rad = ctx.createRadialGradient(px, py, 60, px, py, 550);
-    rad.addColorStop(0, 'rgba(0,0,0,0)');
-    if (gameState === 'SCENE_1') {
-        rad.addColorStop(1, 'rgba(0,0,0,0.85)');
-    } else {
-        rad.addColorStop(1, 'rgba(15, 8, 0, 0.7)'); // Warmer tone for the past
+    else if (currentState === 'TRANSITION_WARP') {
+        for(let p of particles) { p.dist += p.speed * dt; p.speed += 800 * dt; }
+        if(timeElapsed > 3) switchState('ANCIENT_CITY');
     }
-    
-    ctx.globalCompositeOperation = 'multiply';
-    ctx.fillStyle = rad;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.globalCompositeOperation = 'source-over';
+
+    Object.assign(prevKeys, keys);
 }
 
-function drawPuzzleOverlay(ctx) {
-    // Darken Background
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 28px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText("Match the target weight to unlock the past.", canvas.width/2, 80);
-
-    let cx = canvas.width / 2;
-    let basePanY = canvas.height / 2 + 50;
-
-    // Center Stand
-    drawExtruded(ctx, cx - 15, basePanY - 200, 30, 250, 20, '#A0522D');
-    
-    // Beam
-    ctx.strokeStyle = '#8B5A2B';
-    ctx.lineWidth = 14;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(cx - 200, leftPan.y - 120);
-    ctx.lineTo(cx + 200, rightPan.y - 120);
-    ctx.stroke();
-
-    // Pivot Pin
-    ctx.fillStyle = '#444';
-    ctx.beginPath(); ctx.arc(cx, basePanY - 120, 10, 0, Math.PI*2); ctx.fill();
-
-    // Strings
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = '#deb887';
-    // Left
-    ctx.beginPath(); ctx.moveTo(cx - 200, leftPan.y - 120); ctx.lineTo(cx - 250, leftPan.y); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(cx - 200, leftPan.y - 120); ctx.lineTo(cx - 150, leftPan.y); ctx.stroke();
-    // Right
-    ctx.beginPath(); ctx.moveTo(cx + 200, rightPan.y - 120); ctx.lineTo(cx + 150, rightPan.y); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(cx + 200, rightPan.y - 120); ctx.lineTo(cx + 250, rightPan.y); ctx.stroke();
-
-    // Pans
-    ctx.fillStyle = '#6e3c22';
-    ctx.beginPath(); ctx.ellipse(cx - 200, leftPan.y, 80, 25, 0, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(cx + 200, rightPan.y, 80, 25, 0, 0, Math.PI*2); ctx.fill();
-
-    // Target Weight (Carnelian Stone)
-    drawExtruded(ctx, cx + 180, rightPan.y - 45, 40, 40, 15, '#cc3333');
-    ctx.fillStyle = '#fff';
-    ctx.font = '16px monospace';
-    ctx.fillText("Carnelian (11)", cx + 200, rightPan.y + 40);
-
-    // Draggable Weights
-    for (let w of weights) {
-        let wx = w.x;
-        let wy = w.y;
-        if (w.onPan && !w.dragging) {
-            wx = cx - 200 - w.w/2 + (w.id * 18 - 54); 
-            wy = leftPan.y - w.h - 10;
-        }
-
-        drawExtruded(ctx, wx, wy, w.w, w.h, w.h*0.4, '#A9A9A9');
-        
-        ctx.fillStyle = '#000';
-        ctx.font = 'bold 20px monospace';
-        // Adjust text position slightly for top face offset
-        ctx.fillText(w.val, wx + w.w/2 + w.h*0.4*0.3, wy + w.h/2 - w.h*0.4 + 6);
-
-        if (w.dragging) {
-            ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(wx - 2, wy - 2, w.w + 4, w.h + 4);
-        }
-    }
-}
-
+// --- RENDER LOOP ---
 function draw(dt) {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    ctx.save();
-    ctx.translate(-camX, -camY);
+    let camX = Math.max(0, Math.min(player.x + player.w/2 - cw/2, mapW - cw));
+    let camY = Math.max(0, Math.min(player.y + player.h/2 - ch/2, mapH - ch));
+    if(currentState === 'MINIGAME_BRUSH' || currentState === 'TRANSITION_WARP') { camX = 0; camY = 0; }
 
-    drawSceneBackground(ctx);
-    renderEntities(ctx);
+    ctx.fillStyle = eraTheme === 'modern' ? '#c2b280' : '#d2b48c'; 
+    ctx.fillRect(0,0,cw,ch);
+    ctx.save(); ctx.translate(-camX, -camY);
 
-    // Warp Effects rendering in world space
-    if (warpActive) {
-        // Golden Ripple
-        ctx.strokeStyle = `rgba(218, 165, 32, ${Math.max(0, 1 - warpTimer/2)})`;
-        ctx.lineWidth = 15;
-        for(let i=0; i<6; i++) {
-            ctx.beginPath();
-            ctx.arc(player.x + player.w/2, player.y + player.h/2, warpTimer * 1000 + i*120, 0, Math.PI*2);
-            ctx.stroke();
-        }
-
-        // Screen whiteout fade transition
-        let fade = 0;
-        if (warpTimer < 1.5) fade = warpTimer / 1.5;
-        else fade = 1 - (warpTimer - 1.5) / 1.5;
-        
-        ctx.fillStyle = `rgba(255, 255, 255, ${fade})`;
-        ctx.fillRect(camX - 100, camY - 100, canvas.width + 200, canvas.height + 200);
+    if (currentState === 'MODERN_DIG') {
+        ctx.fillStyle = ctx.createPattern(Sprites.trenchBg, 'repeat'); ctx.fillRect(300, 150, 600, 500);
+    }
+    if (currentState === 'ANCIENT_CITY') {
+        ctx.fillStyle = ctx.createPattern(Sprites.waterAnim, 'repeat');
+        ctx.save(); ctx.translate(0, -(timeElapsed*15)%128); ctx.fillRect(1000, -128, 200, mapH+256); ctx.restore();
     }
 
+    if (['MODERN_CAMP', 'MODERN_DIG', 'ANCIENT_CITY'].includes(currentState)) {
+        
+        // Z-SORTING FIX: Draw specific floor objects (Bridges) below EVERYTHING
+        for(let f of floors) ctx.drawImage(f.sprite, f.x, f.y);
+
+        let renderList = [...entities, { ...player, type: 'player' }];
+        renderList.sort((a, b) => (a.y + a.h) - (b.y + b.h));
+
+        // Shadows
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        for(let e of renderList) {
+            if(e.type !== 'prop') {
+                ctx.beginPath(); ctx.ellipse(e.x+e.w/2, e.y+e.h, e.w*0.8, e.h*0.5, 0, 0, 6.28); ctx.fill();
+            }
+        }
+
+        // Draw sorted sprites
+        for(let e of renderList) {
+            if (e.type === 'player') {
+                let bob = Math.floor(player.animTimer) % 2 === 1 ? -2 : 0;
+                ctx.save();
+                if(player.dir === -1) { ctx.translate(e.x + e.w/2, e.y); ctx.scale(-1, 1); ctx.drawImage(player.sprite, -e.drawW/2, e.drawOffY + bob); }
+                else { ctx.drawImage(player.sprite, e.x + e.w/2 - e.drawW/2, e.y + e.drawOffY + bob); }
+                ctx.restore();
+            } else {
+                // Working NPCs Bob logic
+                let bob = ((e.type === 'ai_npc' && e.state === 'walk') || (e.state === 'working')) && Math.floor(timeElapsed*6)%2===1 ? -2 : 0; 
+                ctx.drawImage(e.sprite, e.x + e.w/2 - e.drawW/2, e.y + e.drawOffY + bob);
+                if (e.bubble && !flags.brushingComplete) {
+                    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(e.x+e.w/2, e.y-35, 12, 0, 6.28); ctx.fill();
+                    ctx.fillStyle = '#000'; ctx.font="bold 16px sans-serif"; ctx.fillText("!", e.x+e.w/2-3, e.y-30);
+                }
+            }
+        }
+
+        if (currentState === 'MODERN_CAMP' && flags.gateOpen) {
+            ctx.fillStyle = '#2ecc71'; let arrX = 1100 + Math.sin(timeElapsed*5)*10;
+            ctx.beginPath(); ctx.moveTo(arrX, 400); ctx.lineTo(arrX+30, 415); ctx.lineTo(arrX, 430); ctx.fill();
+        }
+    }
     ctx.restore();
 
-    drawLighting(ctx);
-
-    // Render puzzle overlay in screen space
-    if (sceneMode === 'PUZZLE') {
-        drawPuzzleOverlay(ctx);
+    if (currentState === 'MINIGAME_BRUSH') {
+        ctx.fillStyle = '#000'; ctx.fillRect(0,0,cw,ch);
+        ctx.drawImage(Icons.pot, cw/2 - 120, ch/2 - 120, 240, 240); // New Clay Pot
+        ctx.drawImage(dirtCanvas, 0, 0); 
     }
-    
-    // Brushing Progress Bar Overlay
-    if (sceneMode === 'BRUSHING') {
-        ctx.fillStyle = 'rgba(0,0,0,0.8)';
-        ctx.fillRect(canvas.width/2 - 150, canvas.height - 100, 300, 24);
-        
-        ctx.fillStyle = '#f39c12';
-        ctx.fillRect(canvas.width/2 - 148, canvas.height - 98, (brushProgress/4000)*296, 20);
-        
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(canvas.width/2 - 150, canvas.height - 100, 300, 24);
+    else if (currentState === 'TRANSITION_WARP') {
+        ctx.fillStyle = `rgba(0,0,0, ${Math.max(0, 1 - (timeElapsed-2.8))})`; ctx.fillRect(0,0,cw,ch);
+        ctx.save(); ctx.translate(cw/2, ch/2);
+        for(let p of particles) { ctx.fillStyle = p.col; ctx.fillRect(Math.cos(p.angle)*p.dist, Math.sin(p.angle)*p.dist, 3, 15); }
+        ctx.restore();
+        if(timeElapsed > 2.8) { ctx.fillStyle = `rgba(255,255,255, ${(timeElapsed-2.8)*5})`; ctx.fillRect(0,0,cw,ch); }
+    }
+    else if (currentState === 'ANCIENT_CITY') {
+        ctx.globalCompositeOperation = 'multiply';
+        ctx.fillStyle = 'rgba(255, 160, 50, 0.4)'; ctx.fillRect(0, 0, cw, ch);
+        ctx.globalCompositeOperation = 'source-over';
+
+        if (scaleMinigameActive) {
+            ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(0,0,cw,ch);
+            let cx = cw/2, cy = ch/2;
+            ctx.fillStyle = '#b8860b'; ctx.fillRect(cx-15, cy-180, 30, 360); ctx.fillRect(cx-200, cy-150, 400, 15); 
+            ctx.strokeStyle = '#f1c40f'; ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.moveTo(cx-180, cy-135); ctx.lineTo(cx-130, cy+20); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(cx+180, cy-135); ctx.lineTo(cx+130, cy+20); ctx.stroke();
+            ctx.fillStyle = '#8b6508'; ctx.beginPath(); ctx.ellipse(cx-130, cy+20, 70, 25, 0, 0, 6.28); ctx.fill(); 
+            ctx.beginPath(); ctx.ellipse(cx+130, cy+20, 70, 25, 0, 0, 6.28); ctx.fill(); 
+            
+            for(let i=0; i<3; i++) ctx.drawImage(Icons.lapis, cx-160 + i*25, cy-15, 32, 32);
+            for(let w of scaleWeights) {
+                ctx.drawImage(Icons.chert, w.x, w.y, w.w, w.h);
+                if(w === draggedWeight) { ctx.strokeStyle = '#fff'; ctx.strokeRect(w.x-2, w.y-2, w.w+4, w.h+4); }
+            }
+            ctx.fillStyle = '#fff'; ctx.font = '28px Courier New'; ctx.textAlign = 'center';
+            ctx.fillText("Match Requested Value", cx, cy - 220); ctx.textAlign = 'left';
+        }
     }
 }
 
+// --- ENGINE LOOP ---
 let lastTime = performance.now();
 function loop(time) {
-    let dt = (time - lastTime) / 1000;
-    if (dt > 0.1) dt = 0.1; // clamp delta time to prevent physics tunneling
-    lastTime = time;
-
-    update(dt);
-    draw(dt);
-
+    let dt = (time - lastTime) / 1000; if (dt > 0.1) dt = 0.1; 
+    lastTime = time; update(dt); draw(dt);
     requestAnimationFrame(loop);
 }
 
-// Boot Game
-resize();
-initScene1();
+// --- BOOT ---
+initSprites();
+switchState('MODERN_CAMP');
 requestAnimationFrame(loop);
 
 </script>
